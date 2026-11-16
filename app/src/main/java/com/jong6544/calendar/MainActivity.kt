@@ -123,10 +123,12 @@ class MainActivity : Activity() {
         val syncOn = DeviceCalendar.isEnabled(this)
         PopupMenu(this, anchor).apply {
             menu.add(0, MENU_SYNC, 0, if (syncOn) R.string.sync_turn_off else R.string.sync_turn_on)
-            menu.add(0, MENU_THEME, 1, R.string.widget_theme)
+            if (syncOn) menu.add(0, MENU_CALENDARS, 1, R.string.choose_calendars)
+            menu.add(0, MENU_THEME, 2, R.string.widget_theme)
             setOnMenuItemClickListener {
                 when (it.itemId) {
                     MENU_SYNC -> toggleSync(!syncOn)
+                    MENU_CALENDARS -> chooseCalendars()
                     MENU_THEME -> chooseTheme()
                 }
                 true
@@ -143,6 +145,8 @@ class MainActivity : Activity() {
         Toast.makeText(this, if (enable) R.string.sync_on else R.string.sync_off, Toast.LENGTH_SHORT).show()
         refresh()
         Widgets.updateAll(this)
+        // 켜자마자 어떤 캘린더를 가져올지 고르게 한다.
+        if (enable && DeviceCalendar.calendars(this).size > 1) chooseCalendars()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -150,6 +154,32 @@ class MainActivity : Activity() {
         if (requestCode != REQUEST_CALENDAR) return
         if (DeviceCalendar.hasPermission(this)) toggleSync(true)
         else Toast.makeText(this, R.string.sync_denied, Toast.LENGTH_LONG).show()
+    }
+
+    /** 기념일·공휴일처럼 필요 없는 캘린더를 연동에서 뺄 수 있게 한다. */
+    private fun chooseCalendars() {
+        val calendars = DeviceCalendar.calendars(this)
+        if (calendars.isEmpty()) {
+            Toast.makeText(this, R.string.no_calendars, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val hidden = DeviceCalendar.hiddenIds(this)
+        val checked = BooleanArray(calendars.size) { calendars[it].id !in hidden }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.choose_calendars)
+            .setMultiChoiceItems(calendars.map { it.label }.toTypedArray(), checked) { _, which, isChecked ->
+                checked[which] = isChecked
+            }
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                // 목록에 없는(지금은 안 보이는) 캘린더의 기존 선택은 그대로 둔다.
+                val listed = calendars.map { it.id }.toSet()
+                val nowHidden = calendars.filterIndexed { i, _ -> !checked[i] }.map { it.id }
+                DeviceCalendar.setHiddenIds(this, (hidden - listed) + nowHidden)
+                refresh()
+                Widgets.updateAll(this)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     /** 기기 캘린더 일정은 읽기 전용이라, 누르면 원래 캘린더 앱에서 연다. */
@@ -210,6 +240,7 @@ class MainActivity : Activity() {
         private const val REQUEST_CALENDAR = 1
         private const val MENU_SYNC = 1
         private const val MENU_THEME = 2
+        private const val MENU_CALENDARS = 3
 
         fun intent(context: Context, date: LocalDate): Intent =
             Intent(context, MainActivity::class.java).putExtra(EXTRA_DATE, date.toEpochDay())

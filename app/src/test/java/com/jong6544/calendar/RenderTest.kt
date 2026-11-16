@@ -13,6 +13,7 @@ import android.widget.RemoteViews
 import android.widget.TextView
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -142,9 +143,22 @@ class RenderTest {
         val provider = object : android.content.ContentProvider() {
             override fun onCreate() = true
             override fun query(uri: android.net.Uri, projection: Array<out String>?, selection: String?, args: Array<out String>?, sort: String?): android.database.Cursor {
+                if (uri.pathSegments[0] == "calendars") {
+                    return android.database.MatrixCursor(projection).apply {
+                        addRow(arrayOf<Any>(1L, "내 캘린더", "My calendar"))
+                        addRow(arrayOf<Any>(2L, "기념일", "기념일"))
+                    }
+                }
                 assertEquals("instances", uri.pathSegments[0])
+                val utc = java.time.ZoneOffset.UTC
                 return android.database.MatrixCursor(projection).apply {
-                    addRow(arrayOf<Any>(42L, "삼성 캘린더 일정", begin, end, 0, 0x4CAF7D))
+                    addRow(arrayOf<Any>(42L, "삼성 캘린더 일정", begin, end, 0, 0x4CAF7D, 1L))
+                    addRow(arrayOf<Any>(
+                        43L, "순국선열의 날",
+                        today.atStartOfDay(utc).toInstant().toEpochMilli(),
+                        today.plusDays(1).atStartOfDay(utc).toInstant().toEpochMilli(),
+                        1, 0x999999, 2L,
+                    ))
                 }
             }
             override fun getType(uri: android.net.Uri): String? = null
@@ -161,6 +175,15 @@ class RenderTest {
             .grantPermissions(android.Manifest.permission.READ_CALENDAR)
         DeviceCalendar.setEnabled(context, true)
         try {
+            assertEquals(
+                listOf("기념일", "내 캘린더 (My calendar)"),
+                DeviceCalendar.calendars(context).map { it.label },
+            )
+            // 처음에는 모든 캘린더가 연동된다.
+            assertTrue(Agenda.load(context, today, today).on(today).any { it.title == "순국선열의 날" })
+            // 기념일 캘린더(2)를 빼면 내 일정만 남는다.
+            DeviceCalendar.setHiddenIds(context, setOf(2L))
+            assertEquals(setOf(2L), DeviceCalendar.hiddenIds(context))
             val agenda = Agenda.load(context, today, today)
             val titles = agenda.on(today).map { it.title }
             assertEquals(listOf("엄마 생일", "삼성 캘린더 일정", "마케팅 기획 회의", "가족 식사"), titles)
@@ -172,6 +195,7 @@ class RenderTest {
             shoot(main, "app_main_synced")
         } finally {
             DeviceCalendar.setEnabled(context, false)
+            DeviceCalendar.setHiddenIds(context, emptySet())
         }
     }
 

@@ -91,10 +91,56 @@ class Agenda(private val local: List<Event>, private val device: List<DeviceItem
     }
 }
 
+/** 기기에 등록된 캘린더 하나(예: 내 캘린더, 구글 계정, 기념일). */
+data class DeviceCalendarInfo(val id: Long, val name: String, val account: String) {
+    val label: String
+        get() = if (account.isBlank() || account == name) name else "$name ($account)"
+}
+
 /** 기기 캘린더 연동(읽기 전용). */
 object DeviceCalendar {
     private const val PREFS = "settings"
     private const val KEY = "device_calendar"
+    private const val KEY_HIDDEN = "hidden_calendars"
+
+    /** 연동에서 뺀 캘린더 id. */
+    fun hiddenIds(context: Context): Set<Long> =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getStringSet(KEY_HIDDEN, emptySet()).orEmpty()
+            .mapNotNull { it.toLongOrNull() }.toSet()
+
+    fun setHiddenIds(context: Context, ids: Set<Long>) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putStringSet(KEY_HIDDEN, ids.map { it.toString() }.toSet()).apply()
+    }
+
+    /** 기기 캘린더 앱에서 표시 중인 캘린더 목록. */
+    fun calendars(context: Context): List<DeviceCalendarInfo> {
+        val out = ArrayList<DeviceCalendarInfo>()
+        try {
+            context.contentResolver.query(
+                CalendarContract.Calendars.CONTENT_URI,
+                arrayOf(
+                    CalendarContract.Calendars._ID,
+                    CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
+                    CalendarContract.Calendars.ACCOUNT_NAME,
+                ),
+                "${CalendarContract.Calendars.VISIBLE} = 1", null, null,
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    val id = c.getLong(0)
+                    out += DeviceCalendarInfo(
+                        id,
+                        c.getString(1)?.takeIf { it.isNotBlank() } ?: "캘린더 $id",
+                        c.getString(2).orEmpty(),
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            // 권한이 없거나 캘린더 저장소가 없으면 빈 목록.
+        }
+        return out.sortedBy { it.label }
+    }
     private const val JOB_ID = 1001
 
     fun hasPermission(context: Context): Boolean =
@@ -127,13 +173,16 @@ object DeviceCalendar {
             CalendarContract.Instances.END,
             CalendarContract.Instances.ALL_DAY,
             CalendarContract.Instances.DISPLAY_COLOR,
+            CalendarContract.Instances.CALENDAR_ID,
         )
+        val hidden = hiddenIds(context)
         val out = ArrayList<DeviceItem>()
         try {
             context.contentResolver.query(
                 uri, columns, "${CalendarContract.Instances.VISIBLE} = 1", null, null,
             )?.use { c ->
                 while (c.moveToNext()) {
+                    if (c.getLong(6) in hidden) continue
                     val item = DeviceItem.of(
                         eventId = c.getLong(0),
                         title = c.getString(1),
