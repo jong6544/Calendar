@@ -97,11 +97,24 @@ data class DeviceCalendarInfo(val id: Long, val name: String, val account: Strin
         get() = if (account.isBlank() || account == name) name else "$name ($account)"
 }
 
+/** 같은 제목의 기기 캘린더 일정 묶음: 가장 이른 날짜, 횟수, 모두 종일인지. */
+data class DeviceTitle(val title: String, val first: LocalDate, val count: Int, val allDay: Boolean) {
+    val label: String
+        get() {
+            val parts = ArrayList<String>()
+            parts += "${first.monthValue}/${first.dayOfMonth}"
+            if (count > 1) parts += "${count}회"
+            if (allDay) parts += "종일"
+            return "$title (${parts.joinToString(", ")})"
+        }
+}
+
 /** 기기 캘린더 연동(읽기 전용). */
 object DeviceCalendar {
     private const val PREFS = "settings"
     private const val KEY = "device_calendar"
     private const val KEY_HIDDEN = "hidden_calendars"
+    private const val KEY_HIDDEN_TITLES = "hidden_titles"
 
     /** 연동에서 뺀 캘린더 id. */
     fun hiddenIds(context: Context): Set<Long> =
@@ -113,6 +126,25 @@ object DeviceCalendar {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putStringSet(KEY_HIDDEN, ids.map { it.toString() }.toSet()).apply()
     }
+
+    /** 숨기기로 한 일정 제목. 같은 제목의 기기 캘린더 일정은 모두 표시하지 않는다. */
+    fun hiddenTitles(context: Context): Set<String> =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getStringSet(KEY_HIDDEN_TITLES, emptySet()).orEmpty().toSet()
+
+    fun setHiddenTitles(context: Context, titles: Set<String>) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putStringSet(KEY_HIDDEN_TITLES, titles.toSet()).apply()
+    }
+
+    /** [from]~[to]에 있는 기기 캘린더 일정을 제목별로 묶은 목록(숨긴 제목 포함). 가까운 날짜순. */
+    fun titles(context: Context, from: LocalDate, to: LocalDate): List<DeviceTitle> =
+        query(context, from, to, includeHiddenTitles = true)
+            .groupBy { it.title }
+            .map { (title, items) ->
+                DeviceTitle(title, items.minOf { it.start }, items.size, items.all { it.allDay })
+            }
+            .sortedWith(compareBy({ it.first }, { it.title }))
 
     /** 기기 캘린더 앱에서 표시 중인 캘린더 목록. */
     fun calendars(context: Context): List<DeviceCalendarInfo> {
@@ -158,7 +190,9 @@ object DeviceCalendar {
     }
 
     /** 표시 중인 캘린더의 [from]~[to] 일정. 반복 일정은 저장소가 날짜별로 펼쳐서 준다. */
-    fun query(context: Context, from: LocalDate, to: LocalDate): List<DeviceItem> {
+    fun query(
+        context: Context, from: LocalDate, to: LocalDate, includeHiddenTitles: Boolean = false,
+    ): List<DeviceItem> {
         val zone = ZoneId.systemDefault()
         // 종일 일정이 UTC 기준이라 앞뒤로 하루씩 넉넉히 읽고 아래에서 걸러낸다.
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().let {
@@ -176,6 +210,7 @@ object DeviceCalendar {
             CalendarContract.Instances.CALENDAR_ID,
         )
         val hidden = hiddenIds(context)
+        val hiddenTitles = if (includeHiddenTitles) emptySet() else hiddenTitles(context)
         val out = ArrayList<DeviceItem>()
         try {
             context.contentResolver.query(
@@ -192,6 +227,7 @@ object DeviceCalendar {
                         color = c.getInt(5),
                         zone = zone,
                     )
+                    if (item.title in hiddenTitles) continue
                     if (!item.end.isBefore(from) && !item.start.isAfter(to)) out += item
                 }
             }

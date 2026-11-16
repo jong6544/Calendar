@@ -49,6 +49,12 @@ class MainActivity : Activity() {
             else startActivity(EventEditActivity.editIntent(this, e.id))
         }
 
+        list.setOnItemLongClickListener { _, _, position, _ ->
+            val e = adapter.items[position]
+            if (e.device != null) confirmHideTitle(e.title)
+            e.device != null
+        }
+
         monthView.eventColors = { d -> agenda.on(d).map { it.color } }
         monthView.onDateSelected = { select(it) }
         monthView.onMonthSwipe = { moveMonth(it) }
@@ -124,11 +130,13 @@ class MainActivity : Activity() {
         PopupMenu(this, anchor).apply {
             menu.add(0, MENU_SYNC, 0, if (syncOn) R.string.sync_turn_off else R.string.sync_turn_on)
             if (syncOn) menu.add(0, MENU_CALENDARS, 1, R.string.choose_calendars)
+            if (syncOn) menu.add(0, MENU_HIDE, 1, R.string.choose_hidden)
             menu.add(0, MENU_THEME, 2, R.string.widget_theme)
             setOnMenuItemClickListener {
                 when (it.itemId) {
                     MENU_SYNC -> toggleSync(!syncOn)
                     MENU_CALENDARS -> chooseCalendars()
+                    MENU_HIDE -> chooseHiddenTitles()
                     MENU_THEME -> chooseTheme()
                 }
                 true
@@ -180,6 +188,57 @@ class MainActivity : Activity() {
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    private fun confirmHideTitle(title: String) {
+        AlertDialog.Builder(this)
+            .setMessage(getString(R.string.confirm_hide, title))
+            .setPositiveButton(R.string.hide) { _, _ ->
+                applyHiddenTitles(DeviceCalendar.hiddenTitles(this) + title)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun applyHiddenTitles(titles: Set<String>) {
+        DeviceCalendar.setHiddenTitles(this, titles)
+        refresh()
+        Widgets.updateAll(this)
+    }
+
+    /** 공휴일·기념일처럼 내 일정과 같은 캘린더에 섞여 있는 일정을 제목으로 골라 숨긴다. */
+    private fun chooseHiddenTitles() {
+        val today = LocalDate.now()
+        val found = DeviceCalendar.titles(this, today.minusDays(30), today.plusDays(365))
+        val hidden = DeviceCalendar.hiddenTitles(this)
+        // 기간 밖에 있어 목록에 안 잡힌 숨김 제목도 다시 켤 수 있게 맨 뒤에 붙인다.
+        val titles = found.map { it.title } + (hidden - found.map { it.title }.toSet()).sorted()
+        if (titles.isEmpty()) {
+            Toast.makeText(this, R.string.no_device_events, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val labels = titles.mapIndexed { i, t -> if (i < found.size) found[i].label else t }
+        val checked = BooleanArray(titles.size) { titles[it] in hidden }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.choose_hidden_title)
+            .setMultiChoiceItems(labels.toTypedArray(), checked) { _, which, isChecked ->
+                checked[which] = isChecked
+            }
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                applyHiddenTitles(titles.filterIndexed { i, _ -> checked[i] }.toSet())
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .setNeutralButton(R.string.select_all_day, null)
+            .show()
+        // "종일 일정 모두 선택"은 창을 닫지 않고 체크만 채운다.
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+            for (i in found.indices) {
+                if (found[i].allDay) {
+                    checked[i] = true
+                    dialog.listView.setItemChecked(i, true)
+                }
+            }
+        }
     }
 
     /** 기기 캘린더 일정은 읽기 전용이라, 누르면 원래 캘린더 앱에서 연다. */
@@ -241,6 +300,7 @@ class MainActivity : Activity() {
         private const val MENU_SYNC = 1
         private const val MENU_THEME = 2
         private const val MENU_CALENDARS = 3
+        private const val MENU_HIDE = 4
 
         fun intent(context: Context, date: LocalDate): Intent =
             Intent(context, MainActivity::class.java).putExtra(EXTRA_DATE, date.toEpochDay())

@@ -11,8 +11,8 @@ android {
         applicationId = "com.jong6544.calendar"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.3"
     }
 
     // 저장소에 포함된 디버그 키로 서명해, 어디서 빌드하든 기존 설치본 위에 덮어 설치할 수 있게 한다.

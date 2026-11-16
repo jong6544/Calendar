@@ -181,6 +181,18 @@ class RenderTest {
             )
             // 처음에는 모든 캘린더가 연동된다.
             assertTrue(Agenda.load(context, today, today).on(today).any { it.title == "순국선열의 날" })
+            // 제목으로 숨기면 같은 캘린더에 있어도 빠지고, 선택 목록에는 계속 나온다.
+            DeviceCalendar.setHiddenTitles(context, setOf("순국선열의 날"))
+            assertEquals(
+                listOf("엄마 생일", "삼성 캘린더 일정", "마케팅 기획 회의", "가족 식사"),
+                Agenda.load(context, today, today).on(today).map { it.title },
+            )
+            assertEquals(
+                listOf("삼성 캘린더 일정 (12/20)", "순국선열의 날 (12/20, 종일)"),
+                DeviceCalendar.titles(context, today, today).map { it.label },
+            )
+            DeviceCalendar.setHiddenTitles(context, emptySet())
+            assertTrue(Agenda.load(context, today, today).on(today).any { it.title == "순국선열의 날" })
             // 기념일 캘린더(2)를 빼면 내 일정만 남는다.
             DeviceCalendar.setHiddenIds(context, setOf(2L))
             assertEquals(setOf(2L), DeviceCalendar.hiddenIds(context))
@@ -196,6 +208,7 @@ class RenderTest {
         } finally {
             DeviceCalendar.setEnabled(context, false)
             DeviceCalendar.setHiddenIds(context, emptySet())
+            DeviceCalendar.setHiddenTitles(context, emptySet())
         }
     }
 

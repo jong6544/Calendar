@@ -37,6 +37,12 @@
     <string name="sync_denied">캘린더 권한이 없어 연동할 수 없습니다. 설정 &gt; 애플리케이션 &gt; 내 캘린더 &gt; 권한에서 캘린더를 허용해 주세요.</string>
     <string name="device_calendar">기기 캘린더</string>
     <string name="choose_calendars">연동할 캘린더 선택</string>
+    <string name="choose_hidden">숨길 일정 선택</string>
+    <string name="choose_hidden_title">숨길 일정에 체크하세요</string>
+    <string name="select_all_day">종일 일정 모두 선택</string>
+    <string name="no_device_events">기기 캘린더에 일정이 없습니다</string>
+    <string name="confirm_hide">\'%1$s\' 일정을 앱과 위젯에서 숨길까요?\n\n같은 제목의 일정이 모두 숨겨지며, ⋮ → 숨길 일정 선택에서 다시 켤 수 있습니다.</string>
+    <string name="hide">숨기기</string>
     <string name="no_calendars">기기에 표시 중인 캘린더가 없습니다</string>
     <string name="open_failed">이 일정을 열 수 있는 캘린더 앱이 없습니다</string>
 </resources>
