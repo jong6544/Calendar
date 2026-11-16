@@ -97,6 +97,32 @@ data class DeviceCalendarInfo(val id: Long, val name: String, val account: Strin
         get() = if (account.isBlank() || account == name) name else "$name ($account)"
 }
 
+/** 캘린더 앱이 자동으로 넣는 공휴일·기념일·절기를 제목으로 알아본다. */
+object Holidays {
+    private val keywords = listOf(
+        "신정", "새해", "설날", "구정", "삼일절", "3·1절", "3.1절", "어린이날", "어버이날",
+        "부처님", "석가탄신", "현충일", "광복절", "추석", "한가위", "개천절", "한글날",
+        "성탄", "크리스마스", "기독탄신", "공휴일", "대체 휴일", "대체휴일", "연휴", "식목일",
+        "제헌절", "선거", "기념일", "정월대보름", "단오", "칠석", "초복", "중복", "말복",
+        "발렌타인", "밸런타인", "화이트데이", "할로윈", "핼러윈",
+    )
+
+    // 24절기 등은 다른 말에 섞여 나오기 쉬워 제목이 정확히 같을 때만.
+    private val exact = setOf(
+        "입춘", "우수", "경칩", "춘분", "청명", "곡우", "입하", "소만", "망종", "하지", "소서", "대서",
+        "입추", "처서", "백로", "추분", "한로", "상강", "입동", "소설", "대설", "동지", "소한", "대한",
+        "한식",
+    )
+
+    fun looksLikeHoliday(title: String): Boolean {
+        val t = title.trim()
+        if (t in exact) return true
+        if (keywords.any { t.contains(it) }) return true
+        // "순국선열의 날", "국군의 날" / "부활절", "노동절"
+        return t.endsWith("의 날") || t.endsWith("의날") || (t.length <= 6 && t.endsWith("절"))
+    }
+}
+
 /** 같은 제목의 기기 캘린더 일정 묶음: 가장 이른 날짜, 횟수, 모두 종일인지. */
 data class DeviceTitle(val title: String, val first: LocalDate, val count: Int, val allDay: Boolean) {
     val label: String

@@ -39,7 +39,7 @@
     <string name="choose_calendars">연동할 캘린더 선택</string>
     <string name="choose_hidden">숨길 일정 선택</string>
     <string name="choose_hidden_title">숨길 일정에 체크하세요</string>
-    <string name="select_all_day">종일 일정 모두 선택</string>
+    <string name="select_holidays">공휴일·기념일 선택</string>
     <string name="no_device_events">기기 캘린더에 일정이 없습니다</string>
     <string name="confirm_hide">\'%1$s\' 일정을 앱과 위젯에서 숨길까요?\n\n같은 제목의 일정이 모두 숨겨지며, ⋮ → 숨길 일정 선택에서 다시 켤 수 있습니다.</string>
     <string name="hide">숨기기</string>

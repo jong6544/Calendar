@@ -228,12 +228,12 @@ class MainActivity : Activity() {
                 applyHiddenTitles(titles.filterIndexed { i, _ -> checked[i] }.toSet())
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .setNeutralButton(R.string.select_all_day, null)
+            .setNeutralButton(R.string.select_holidays, null)
             .show()
-        // "종일 일정 모두 선택"은 창을 닫지 않고 체크만 채운다.
+        // "공휴일·기념일 선택"은 창을 닫지 않고 해당 제목에 체크만 채운다.
         dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-            for (i in found.indices) {
-                if (found[i].allDay) {
+            for (i in titles.indices) {
+                if (Holidays.looksLikeHoliday(titles[i])) {
                     checked[i] = true
                     dialog.listView.setItemChecked(i, true)
                 }

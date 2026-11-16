@@ -114,6 +114,20 @@ class EventTest {
     }
 
     @Test
+    fun holidayTitlesAreRecognisedButStudyPlanIsNot() {
+        for (t in listOf("순국선열의 날", "신정", "설날 연휴", "삼일절", "어린이날", "부처님오신날", "현충일",
+            "광복절", "추석", "개천절", "한글날", "성탄절", "크리스마스", "대체공휴일", "제헌절", "국군의 날",
+            "동지", "지방선거", "근로자의 날")) {
+            assertTrue(t, Holidays.looksLikeHoliday(t))
+        }
+        for (t in listOf("쉬는 날", "영어 토익 RC 독해 (1시간)", "LEET 오답 다시 보기 (2시간) + 논술 1편",
+            "LEET 추리논증 - 2018학년도 (1시간)", "후보 학교 입학전형 기본계획 확인", "엄마 생일", "소설 읽기",
+            "LEET 원서접수 기간 확인(5월 말 예상)", "토익 4·5월 시험 접수 확인")) {
+            assertFalse(t, Holidays.looksLikeHoliday(t))
+        }
+    }
+
+    @Test
     fun timeLabels() {
         assertEquals("14:30 ~ 15:00", Event(0, "x", 0, false, 870, 900, 0).timeLabel())
         assertEquals("종일", Event(0, "x", 0, true, 0, 0, 0).timeLabel())
