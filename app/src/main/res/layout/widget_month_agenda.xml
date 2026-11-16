@@ -6,7 +6,7 @@
     android:background="@drawable/widget_bg_cream"
     android:baselineAligned="false"
     android:orientation="horizontal"
-    android:padding="12dp">
+    android:padding="10dp">
 
     <LinearLayout
         android:layout_width="0dp"

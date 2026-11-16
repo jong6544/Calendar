@@ -26,6 +26,8 @@ class MonthView @JvmOverloads constructor(
 
     /** 날짜별 일정 색(점으로 표시). */
     var eventColors: (LocalDate) -> List<Int> = { emptyList() }
+    /** 일정을 모두 완수해 스티커를 붙일 날인지. */
+    var allDone: (LocalDate) -> Boolean = { false }
     var onDateSelected: ((LocalDate) -> Unit)? = null
     /** +1: 다음 달, -1: 이전 달 */
     var onMonthSwipe: ((Int) -> Unit)? = null
@@ -46,6 +48,28 @@ class MonthView @JvmOverloads constructor(
         textSize = 12 * resources.displayMetrics.scaledDensity
     }
     private val shapePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val starPath = android.graphics.Path()
+
+    /** 별 스티커: 노란 별에 주황 테두리. */
+    private fun drawStar(canvas: Canvas, cx: Float, cy: Float, r: Float) {
+        starPath.reset()
+        for (i in 0 until 10) {
+            val radius = if (i % 2 == 0) r else r * 0.48f
+            val angle = Math.toRadians(-90.0 + i * 36.0)
+            val x = cx + (radius * kotlin.math.cos(angle)).toFloat()
+            val y = cy + (radius * kotlin.math.sin(angle)).toFloat()
+            if (i == 0) starPath.moveTo(x, y) else starPath.lineTo(x, y)
+        }
+        starPath.close()
+        shapePaint.style = Paint.Style.FILL
+        shapePaint.color = 0xFFFFC531.toInt()
+        canvas.drawPath(starPath, shapePaint)
+        shapePaint.style = Paint.Style.STROKE
+        shapePaint.strokeWidth = 1.2f * density
+        shapePaint.strokeJoin = Paint.Join.ROUND
+        shapePaint.color = 0xFFF28C28.toInt()
+        canvas.drawPath(starPath, shapePaint)
+    }
 
     private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent) = true
@@ -124,6 +148,8 @@ class MonthView @JvmOverloads constructor(
                 else -> textColor
             }
             canvas.drawText(day.toString(), cx, cy - (textPaint.descent() + textPaint.ascent()) / 2, textPaint)
+
+            if (allDone(date)) drawStar(canvas, cx + radius * 0.95f, cy - radius * 0.8f, 8 * density)
 
             val colors = eventColors(date).take(4)
             if (colors.isNotEmpty()) {

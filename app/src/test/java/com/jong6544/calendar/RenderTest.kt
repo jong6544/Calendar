@@ -129,10 +129,10 @@ class RenderTest {
     fun agendaAndTodayWidgets() {
         val events = Agenda(EventStore.get(context).all())
         WidgetTheme.set(context, WidgetTheme.SKY)
-        render(WidgetRenderer.agenda(context, options(150), events, today), 340, 150, "widget_agenda")
+        render(WidgetRenderer.agenda(context, 5, options(150), events, today), 340, 150, "widget_agenda")
         WidgetTheme.set(context, WidgetTheme.CREAM)
         render(WidgetRenderer.today(context, events, today), 150, 150, "widget_today")
-        render(WidgetRenderer.agenda(context, null, Agenda(emptyList()), today), 340, 110, "widget_agenda_empty")
+        render(WidgetRenderer.agenda(context, 5, null, Agenda(emptyList()), today), 340, 110, "widget_agenda_empty")
     }
 
     @Test
@@ -210,6 +210,53 @@ class RenderTest {
             DeviceCalendar.setHiddenIds(context, emptySet())
             DeviceCalendar.setHiddenTitles(context, emptySet())
         }
+    }
+
+    @Test
+    fun completingEveryEventPutsAStickerOnTheDay() {
+        val store = EventStore.get(context)
+        store.doneKeys().forEach { store.setDone(it, false) }
+        fun agenda() = Agenda(store.all(), emptyList(), store.doneKeys())
+        val todays = agenda().on(today)
+        assertEquals(3, todays.size)
+
+        // 하나만 완수하면 아직 스티커 없음
+        store.setDone(todays[1].doneKey(), true)
+        assertEquals(listOf(false, true, false), agenda().on(today).map { it.done })
+        assertEquals(false, agenda().allDone(today))
+
+        // 위젯에서 일정을 누른 것과 같은 방송으로 나머지를 완수
+        val id = org.robolectric.Shadows.shadowOf(AppWidgetManager.getInstance(context))
+            .createWidget(MonthAgendaWidget::class.java, R.layout.widget_month_agenda)
+        for (e in listOf(todays[0], todays[2])) {
+            MonthAgendaWidget().onReceive(
+                context,
+                Intent(context, MonthAgendaWidget::class.java).setAction(Widgets.ACTION_TOGGLE_DONE)
+                    .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+                    .putExtra(Widgets.EXTRA_KEY, e.doneKey()),
+            )
+        }
+        assertTrue(agenda().allDone(today))
+        // 매년 반복되는 '엄마 생일'은 올해 것만 완수 처리된다.
+        assertEquals(false, agenda().on(today.plusYears(1)).single().done)
+        // 일정이 없는 날은 스티커 대상이 아니다.
+        assertEquals(false, agenda().allDone(today.plusDays(5)))
+        store.setDone(agenda().on(LocalDate.of(2026, 12, 10)).single().doneKey(), true)
+
+        WidgetTheme.set(context, WidgetTheme.CREAM)
+        // 4×2 크기(높이 200dp/150dp)에서의 모습
+        render(WidgetRenderer.monthAgenda(context, 8, options(200), agenda(), today), 340, 200, "widget_4x2_done")
+        render(WidgetRenderer.monthAgenda(context, 8, options(150), agenda(), today), 340, 150, "widget_4x2_short")
+        render(WidgetRenderer.today(context, agenda(), today), 150, 150, "widget_today_done")
+        val main = Robolectric.buildActivity(MainActivity::class.java, MainActivity.intent(context, today)).setup().get()
+        shoot(main, "app_main_done")
+
+        // 다시 누르면 취소되고, 일정을 지우면 완수 기록도 지워진다.
+        store.toggleDone(todays[0].doneKey())
+        assertEquals(false, agenda().allDone(today))
+        store.delete(todays[1].id)
+        assertTrue(store.doneKeys().none { it.startsWith("L${todays[1].id}@") })
+        store.doneKeys().forEach { store.setDone(it, false) }
     }
 
     private fun shoot(activity: Activity, name: String) =

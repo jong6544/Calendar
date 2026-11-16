@@ -29,6 +29,12 @@
     <string name="prev_month">이전 달</string>
     <string name="next_month">다음 달</string>
     <string name="add_event">일정 추가</string>
+    <string name="mark_done">완수하기 ✓</string>
+    <string name="mark_undone">완수 취소</string>
+    <string name="done">완수</string>
+    <string name="all_done">모두 완수</string>
+    <string name="open_in_calendar">캘린더 앱에서 열기</string>
+    <string name="hide_this_title">이 제목의 일정 숨기기</string>
     <string name="more">더보기</string>
     <string name="sync_turn_on">기기 캘린더 연동 켜기</string>
     <string name="sync_turn_off">기기 캘린더 연동 끄기</string>

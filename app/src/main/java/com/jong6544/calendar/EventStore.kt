@@ -7,7 +7,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
 class EventStore private constructor(context: Context) :
-    SQLiteOpenHelper(context, "events.db", null, 1) {
+    SQLiteOpenHelper(context, "events.db", null, 2) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -22,9 +22,37 @@ class EventStore private constructor(context: Context) :
                 repeat INTEGER NOT NULL DEFAULT 0
             )"""
         )
+
+        createDoneTable(db)
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) createDoneTable(db)
+    }
+
+    /** 완수한 일정(일정+날짜 열쇠) 목록. */
+    private fun createDoneTable(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS done (key TEXT PRIMARY KEY)")
+    }
+
+    fun doneKeys(): Set<String> =
+        readableDatabase.rawQuery("SELECT key FROM done", null).use { c ->
+            val out = HashSet<String>(c.count)
+            while (c.moveToNext()) out += c.getString(0)
+            out
+        }
+
+    fun setDone(key: String, done: Boolean) {
+        if (done) {
+            writableDatabase.insertWithOnConflict(
+                "done", null, ContentValues().apply { put("key", key) }, SQLiteDatabase.CONFLICT_IGNORE,
+            )
+        } else {
+            writableDatabase.delete("done", "key = ?", arrayOf(key))
+        }
+    }
+
+    fun toggleDone(key: String) = setDone(key, key !in doneKeys())
 
     fun all(): List<Event> =
         readableDatabase.rawQuery("SELECT * FROM events", null).use { c ->
@@ -58,6 +86,7 @@ class EventStore private constructor(context: Context) :
 
     fun delete(id: Long) {
         writableDatabase.delete("events", "id = ?", arrayOf(id.toString()))
+        writableDatabase.delete("done", "key LIKE ?", arrayOf("L$id@%"))
     }
 
     private fun Cursor.toEvent() = Event(

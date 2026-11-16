@@ -9,7 +9,9 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.graphics.Paint
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
 import java.time.LocalDate
@@ -54,6 +56,8 @@ object Widgets {
     const val ACTION_REFRESH = "com.jong6544.calendar.widget.REFRESH"
     const val EXTRA_DAY = "day"
     const val EXTRA_DELTA = "delta"
+    const val ACTION_TOGGLE_DONE = "com.jong6544.calendar.widget.TOGGLE_DONE"
+    const val EXTRA_KEY = "key"
     /** "다가오는 일정" 위젯이 내다보는 일수. */
     const val UPCOMING_DAYS = 90L
 
@@ -89,7 +93,7 @@ object Widgets {
                 WidgetRenderer.monthAgenda(context, id, options, agenda, today)
             }
             AgendaWidget::class.java -> WidgetRenderer.agenda(
-                context, options, Agenda.load(context, today, today.plusDays(UPCOMING_DAYS)), today,
+                context, id, options, Agenda.load(context, today, today.plusDays(UPCOMING_DAYS)), today,
             )
             else -> WidgetRenderer.today(context, Agenda.load(context, today, today), today)
         }
@@ -140,8 +144,11 @@ object WidgetRenderer {
             IMMUTABLE,
         )
 
-    private fun broadcast(context: Context, widgetId: Int, action: String, key: String, extra: (Intent) -> Unit = {}): PendingIntent {
-        val intent = Intent(context, MonthAgendaWidget::class.java)
+    private fun broadcast(
+        context: Context, widgetId: Int, action: String, key: String,
+        target: Class<*> = MonthAgendaWidget::class.java, extra: (Intent) -> Unit = {},
+    ): PendingIntent {
+        val intent = Intent(context, target)
             .setAction(action)
             .setData(Uri.parse("calwidget://$widgetId/$key"))
             .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
@@ -149,13 +156,29 @@ object WidgetRenderer {
         return PendingIntent.getBroadcast(context, 0, intent, IMMUTABLE)
     }
 
-    private fun eventRow(context: Context, theme: WidgetTheme, e: Event, label: String): RemoteViews =
+    /** 일정 한 줄. 누르면 완수/취소가 바뀐다. */
+    private fun eventRow(
+        context: Context, theme: WidgetTheme, e: Event, label: String, target: Class<*>, widgetId: Int,
+    ): RemoteViews =
         RemoteViews(context.packageName, R.layout.widget_event_row).apply {
             setInt(R.id.ev_dot, "setColorFilter", e.color)
+            setInt(R.id.ev_check, "setColorFilter", e.color)
+            setViewVisibility(R.id.ev_dot, if (e.done) View.INVISIBLE else View.VISIBLE)
+            setViewVisibility(R.id.ev_check, if (e.done) View.VISIBLE else View.INVISIBLE)
             setTextViewText(R.id.ev_title, e.title)
-            setTextColor(R.id.ev_title, theme.text)
+            setTextColor(R.id.ev_title, if (e.done) theme.subText else theme.text)
+            setInt(
+                R.id.ev_title, "setPaintFlags",
+                Paint.ANTI_ALIAS_FLAG or (if (e.done) Paint.STRIKE_THRU_TEXT_FLAG else 0),
+            )
             setTextViewText(R.id.ev_time, label)
             setTextColor(R.id.ev_time, theme.subText)
+            setOnClickPendingIntent(
+                R.id.ev_row,
+                broadcast(context, widgetId, Widgets.ACTION_TOGGLE_DONE, "done/${e.doneKey()}", target) {
+                    it.putExtra(Widgets.EXTRA_KEY, e.doneKey())
+                },
+            )
         }
 
     private fun note(context: Context, theme: WidgetTheme, text: String): RemoteViews =
@@ -188,6 +211,10 @@ object WidgetRenderer {
         rv.setOnClickPendingIntent(R.id.btn_next, broadcast(context, widgetId, Widgets.ACTION_NAV, "next") {
             it.putExtra(Widgets.EXTRA_DELTA, 1)
         })
+        // 위젯 높이에 맞춰 날짜 글자 크기를 줄인다(4×2에서도 6주가 들어가게).
+        val height = heightDp(options, 150)
+        val rowHeight = (height - 62f) / Dates.weekRows(month)
+        val daySize = (rowHeight * 0.6f).coerceIn(8f, 12f)
         rv.setOnClickPendingIntent(R.id.title, broadcast(context, widgetId, Widgets.ACTION_TODAY, "today"))
 
         for (c in 0..6) {
@@ -211,6 +238,7 @@ object WidgetRenderer {
                     val isToday = date == today
                     val isSelected = date == selected
                     cell.setTextViewText(R.id.day_num, day.toString())
+                    cell.setTextViewTextSize(R.id.day_num, TypedValue.COMPLEX_UNIT_SP, daySize)
                     cell.setTextColor(
                         R.id.day_num,
                         when {
@@ -228,8 +256,12 @@ object WidgetRenderer {
                         cell.setInt(R.id.day_bg, "setColorFilter", theme.accent)
                         cell.setViewVisibility(R.id.day_bg, View.VISIBLE)
                     }
-                    // 오늘은 원으로 채워지므로 밑줄을 겹쳐 그리지 않는다.
-                    if (!isToday && agenda.has(date)) {
+                    val dayEvents = agenda.on(date)
+                    if (dayEvents.isNotEmpty() && dayEvents.all { it.done }) {
+                        // 모두 완수한 날: 밑줄 대신 별 스티커
+                        cell.setViewVisibility(R.id.day_star, View.VISIBLE)
+                    } else if (!isToday && dayEvents.isNotEmpty()) {
+                        // 오늘은 원으로 채워지므로 밑줄을 겹쳐 그리지 않는다.
                         cell.setInt(R.id.day_mark, "setColorFilter", theme.accent)
                         cell.setViewVisibility(R.id.day_mark, View.VISIBLE)
                     }
@@ -256,13 +288,16 @@ object WidgetRenderer {
 
         rv.removeAllViews(R.id.events)
         val dayEvents = agenda.on(selected)
-        val capacity = ((heightDp(options, 180) - 60) / 38).coerceIn(1, 7)
+        val capacity = ((height - 50) / 37).coerceIn(1, 7)
         if (dayEvents.isEmpty()) {
             rv.addView(R.id.events, note(context, theme, context.getString(R.string.no_events)))
         } else {
             val shown = if (dayEvents.size > capacity) capacity - 1 else dayEvents.size
             for (e in dayEvents.take(shown)) {
-                rv.addView(R.id.events, eventRow(context, theme, e, e.timeLabel()))
+                rv.addView(
+                    R.id.events,
+                    eventRow(context, theme, e, e.timeLabel(), MonthAgendaWidget::class.java, widgetId),
+                )
             }
             if (dayEvents.size > shown) {
                 rv.addView(R.id.events, note(context, theme, "+${dayEvents.size - shown}개 더"))
@@ -272,7 +307,7 @@ object WidgetRenderer {
     }
 
     /** 오늘 날짜와 다가오는 일정을 보여주는 위젯. */
-    fun agenda(context: Context, options: Bundle?, agenda: Agenda, today: LocalDate): RemoteViews {
+    fun agenda(context: Context, widgetId: Int, options: Bundle?, agenda: Agenda, today: LocalDate): RemoteViews {
         val theme = WidgetTheme.current(context)
         val rv = RemoteViews(context.packageName, R.layout.widget_agenda)
         rv.setInt(R.id.root, "setBackgroundResource", theme.backgroundRes)
@@ -296,7 +331,10 @@ object WidgetRenderer {
                 today.plusDays(1) -> "내일 · "
                 else -> "${date.monthValue}/${date.dayOfMonth} (${Dates.weekdayShort(date)}) · "
             }
-            rv.addView(R.id.events, eventRow(context, theme, e, prefix + e.timeLabel()))
+            rv.addView(
+                R.id.events,
+                eventRow(context, theme, e, prefix + e.timeLabel(), AgendaWidget::class.java, widgetId),
+            )
         }
         return rv
     }
@@ -313,10 +351,13 @@ object WidgetRenderer {
         val todays = agenda.on(today)
         rv.setTextViewText(
             R.id.today_summary,
-            when (todays.size) {
-                0 -> context.getString(R.string.no_events)
-                1 -> todays[0].title
-                else -> "${todays[0].title} 외 ${todays.size - 1}개"
+            when {
+                todays.isEmpty() -> context.getString(R.string.no_events)
+                todays.all { it.done } -> "⭐ " + context.getString(R.string.all_done)
+                else -> {
+                    val left = todays.filter { !it.done }
+                    if (left.size == 1) left[0].title else "${left[0].title} 외 ${left.size - 1}개"
+                }
             },
         )
         rv.setTextColor(R.id.today_summary, theme.subText)
@@ -340,6 +381,17 @@ object WidgetRenderer {
 }
 
 abstract class BaseWidget : AppWidgetProvider() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Widgets.ACTION_TOGGLE_DONE) {
+            // 위젯에서 일정을 누르면 완수/취소
+            val key = intent.getStringExtra(Widgets.EXTRA_KEY) ?: return
+            EventStore.get(context).toggleDone(key)
+            Widgets.updateAll(context)
+            return
+        }
+        super.onReceive(context, intent)
+    }
+
     override fun onUpdate(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
         for (id in appWidgetIds) Widgets.update(context, manager, javaClass, id)
         Widgets.scheduleMidnightRefresh(context)

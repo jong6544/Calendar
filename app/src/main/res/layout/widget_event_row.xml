@@ -1,22 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/ev_row"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:paddingTop="5dp">
 
-    <ImageView
-        android:id="@+id/ev_dot"
-        android:layout_width="8dp"
-        android:layout_height="8dp"
-        android:layout_marginTop="5dp"
-        android:importantForAccessibility="no"
-        android:src="@drawable/widget_circle" />
+    <FrameLayout
+        android:layout_width="12dp"
+        android:layout_height="12dp"
+        android:layout_marginTop="3dp">
+
+        <ImageView
+            android:id="@+id/ev_dot"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:layout_gravity="center"
+            android:importantForAccessibility="no"
+            android:src="@drawable/widget_circle" />
+
+        <ImageView
+            android:id="@+id/ev_check"
+            android:layout_width="12dp"
+            android:layout_height="12dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_check"
+            android:visibility="invisible" />
+    </FrameLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
+        android:layout_marginStart="6dp"
         android:orientation="vertical">
 
         <TextView

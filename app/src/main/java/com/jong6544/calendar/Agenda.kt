@@ -66,14 +66,24 @@ data class DeviceItem(
 }
 
 /** 앱에 저장한 일정과 기기 캘린더 일정을 합쳐 날짜별로 돌려준다. */
-class Agenda(private val local: List<Event>, private val device: List<DeviceItem> = emptyList()) {
+class Agenda(
+    private val local: List<Event>,
+    private val device: List<DeviceItem> = emptyList(),
+    private val done: Set<String> = emptySet(),
+) {
 
     /** [d]의 일정을 종일 → 시작 시간 순으로. */
     fun on(d: LocalDate): List<Event> {
         val out = ArrayList<Event>()
-        local.filterTo(out) { it.occursOn(d) }
+        val day = d.toEpochDay()
+        for (e in local) {
+            if (e.occursOn(d)) out += e.copy(shownDay = day, done = e.doneKey(day) in done)
+        }
         for (item in device) {
-            if (!d.isBefore(item.start) && !d.isAfter(item.end)) out += item.toEvent(d)
+            if (!d.isBefore(item.start) && !d.isAfter(item.end)) {
+                val e = item.toEvent(d)
+                out += e.copy(done = e.doneKey() in done)
+            }
         }
         out.sortWith(compareBy<Event>({ !it.allDay }, { it.startMin }, { it.title }))
         return out
@@ -82,12 +92,19 @@ class Agenda(private val local: List<Event>, private val device: List<DeviceItem
     fun has(d: LocalDate): Boolean =
         local.any { it.occursOn(d) } || device.any { !d.isBefore(it.start) && !d.isAfter(it.end) }
 
+    /** 일정이 있고 전부 완수한 날(스티커를 붙이는 날). */
+    fun allDone(d: LocalDate): Boolean = on(d).let { it.isNotEmpty() && it.all { e -> e.done } }
+
     companion object {
         /** [from]~[to] 범위를 그리는 데 필요한 일정을 읽는다. */
-        fun load(context: Context, from: LocalDate, to: LocalDate): Agenda = Agenda(
-            EventStore.get(context).all(),
-            if (DeviceCalendar.isEnabled(context)) DeviceCalendar.query(context, from, to) else emptyList(),
-        )
+        fun load(context: Context, from: LocalDate, to: LocalDate): Agenda {
+            val store = EventStore.get(context)
+            return Agenda(
+                store.all(),
+                if (DeviceCalendar.isEnabled(context)) DeviceCalendar.query(context, from, to) else emptyList(),
+                store.doneKeys(),
+            )
+        }
     }
 }
 

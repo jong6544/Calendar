@@ -6,6 +6,7 @@ import android.app.AlertDialog
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
+import android.graphics.Paint
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.provider.CalendarContract
@@ -44,9 +45,7 @@ class MainActivity : Activity() {
         val list = findViewById<ListView>(R.id.event_list)
         list.adapter = adapter
         list.setOnItemClickListener { _, _, position, _ ->
-            val e = adapter.items[position]
-            if (e.device != null) openInDeviceCalendar(e.device)
-            else startActivity(EventEditActivity.editIntent(this, e.id))
+            showEventActions(adapter.items[position])
         }
 
         list.setOnItemLongClickListener { _, _, position, _ ->
@@ -55,6 +54,7 @@ class MainActivity : Activity() {
             e.device != null
         }
 
+        monthView.allDone = { d -> agenda.allDone(d) }
         monthView.eventColors = { d -> agenda.on(d).map { it.color } }
         monthView.onDateSelected = { select(it) }
         monthView.onMonthSwipe = { moveMonth(it) }
@@ -119,7 +119,8 @@ class MainActivity : Activity() {
         titleView.text = "${month.year}년 ${month.monthValue}월"
         monthView.month = month
         monthView.selected = selected
-        dayLabel.text = "${selected.monthValue}월 ${selected.dayOfMonth}일 ${Dates.weekdayLong(selected)}"
+        dayLabel.text = "${selected.monthValue}월 ${selected.dayOfMonth}일 ${Dates.weekdayLong(selected)}" +
+            if (agenda.allDone(selected)) "  ⭐ ${getString(R.string.all_done)}" else ""
         adapter.items = agenda.on(selected)
         adapter.notifyDataSetChanged()
         emptyView.visibility = if (adapter.items.isEmpty()) View.VISIBLE else View.GONE
@@ -187,6 +188,26 @@ class MainActivity : Activity() {
                 Widgets.updateAll(this)
             }
             .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** 일정을 누르면: 완수 표시, 수정(앱 일정) 또는 원래 캘린더에서 열기·숨기기(기기 일정). */
+    private fun showEventActions(e: Event) {
+        val actions = ArrayList<Pair<String, () -> Unit>>()
+        actions += getString(if (e.done) R.string.mark_undone else R.string.mark_done) to {
+            EventStore.get(this).setDone(e.doneKey(), !e.done)
+            refresh()
+            Widgets.updateAll(this)
+        }
+        if (e.device != null) {
+            actions += getString(R.string.open_in_calendar) to { openInDeviceCalendar(e.device) }
+            actions += getString(R.string.hide_this_title) to { confirmHideTitle(e.title) }
+        } else {
+            actions += getString(R.string.edit_event) to { startActivity(EventEditActivity.editIntent(this, e.id)) }
+        }
+        AlertDialog.Builder(this)
+            .setTitle(e.title)
+            .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second() }
             .show()
     }
 
@@ -285,7 +306,13 @@ class MainActivity : Activity() {
                 shape = GradientDrawable.OVAL
                 setColor(e.color)
             }
-            view.findViewById<TextView>(R.id.item_title).text = e.title
+            view.findViewById<TextView>(R.id.item_title).apply {
+                text = e.title
+                paintFlags = if (e.done) paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
+                else paintFlags and Paint.STRIKE_THRU_TEXT_FLAG.inv()
+                setTextColor(getColor(if (e.done) R.color.text_secondary else R.color.text_primary))
+            }
+            view.findViewById<View>(R.id.item_check).visibility = if (e.done) View.VISIBLE else View.GONE
             val repeat = if (e.repeat != Event.REPEAT_NONE) " · ${Event.REPEAT_LABELS[e.repeat]}" else ""
             val source = if (e.device != null) " · ${getString(R.string.device_calendar)}" else ""
             view.findViewById<TextView>(R.id.item_time).text = e.timeLabel() + repeat + source

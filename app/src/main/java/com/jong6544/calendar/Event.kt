@@ -16,6 +16,10 @@ data class Event(
     val repeat: Int = REPEAT_NONE,
     /** 기기 캘린더에서 읽어 온 일정이면 원본 위치. 앱에서 만든 일정은 null. */
     val device: DeviceRef? = null,
+    /** 화면에 표시되는 날짜. 반복 일정은 시작일([epochDay])과 다를 수 있다. */
+    val shownDay: Long = epochDay,
+    /** [shownDay]의 이 일정을 완수했는지. */
+    val done: Boolean = false,
 ) {
     val date: LocalDate get() = LocalDate.ofEpochDay(epochDay)
 
@@ -30,6 +34,10 @@ data class Event(
             else -> d == start
         }
     }
+
+    /** 완수 기록의 열쇠: 어느 일정의 어느 날짜분인지. */
+    fun doneKey(day: Long = shownDay): String =
+        (device?.let { "D${it.eventId}" } ?: "L$id") + "@" + day
 
     fun timeLabel(): String =
         if (allDay) "종일" else "${formatTime(startMin)} ~ ${formatTime(endMin)}"
