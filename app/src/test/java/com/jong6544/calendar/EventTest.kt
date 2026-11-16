@@ -39,10 +39,9 @@ class EventTest {
     @Test
     fun allDayFirstThenByStartTime() {
         val d = LocalDate.of(2026, 12, 20)
-        val sorted = Event.on(
+        val sorted = Agenda(
             listOf(event(d, start = 900, title = "late"), event(d, start = 540, title = "early"), event(d, allDay = true, title = "all")),
-            d,
-        )
+        ).on(d)
         assertEquals(listOf("all", "early", "late"), sorted.map { it.title })
     }
 
@@ -64,8 +63,54 @@ class EventTest {
             event(today.minusDays(1), title = "past"),
             event(today.plusDays(1), title = "b"),
         )
-        assertEquals(listOf("a", "b"), WidgetRenderer.upcoming(events, today, 2).map { it.second.title })
-        assertEquals(listOf("a", "b", "c"), WidgetRenderer.upcoming(events, today, 9).map { it.second.title })
+        assertEquals(listOf("a", "b"), WidgetRenderer.upcoming(Agenda(events), today, 2).map { it.second.title })
+        assertEquals(listOf("a", "b", "c"), WidgetRenderer.upcoming(Agenda(events), today, 9).map { it.second.title })
+    }
+
+    private val seoul = java.time.ZoneId.of("Asia/Seoul")
+    private fun millis(y: Int, m: Int, d: Int, h: Int, min: Int, zone: java.time.ZoneId = seoul) =
+        java.time.ZonedDateTime.of(y, m, d, h, min, 0, 0, zone).toInstant().toEpochMilli()
+
+    @Test
+    fun deviceTimedEvent() {
+        val item = DeviceItem.of(5, "회의", millis(2026, 12, 20, 14, 30), millis(2026, 12, 20, 15, 0), false, 0x123456, seoul)
+        assertEquals(LocalDate.of(2026, 12, 20), item.start)
+        assertEquals(item.start, item.end)
+        val e = Agenda(emptyList(), listOf(item)).on(item.start).single()
+        assertEquals("14:30 ~ 15:00", e.timeLabel())
+        assertEquals(0xFF123456.toInt(), e.color)
+        assertEquals(5L, e.device?.eventId)
+        assertTrue(Agenda(emptyList(), listOf(item)).on(item.start.plusDays(1)).isEmpty())
+    }
+
+    @Test
+    fun deviceAllDayEventIsStoredInUtcAndEndsExclusive() {
+        val utc = java.time.ZoneOffset.UTC
+        // 12/20 하루짜리 종일 일정: UTC 12/20 0시 ~ 12/21 0시
+        val one = DeviceItem.of(1, "생일", millis(2026, 12, 20, 0, 0, utc), millis(2026, 12, 21, 0, 0, utc), true, 0, seoul)
+        assertEquals(LocalDate.of(2026, 12, 20), one.start)
+        assertEquals(LocalDate.of(2026, 12, 20), one.end)
+        // 12/24~12/26 사흘
+        val trip = DeviceItem.of(2, "여행", millis(2026, 12, 24, 0, 0, utc), millis(2026, 12, 27, 0, 0, utc), true, 0, seoul)
+        val agenda = Agenda(emptyList(), listOf(one, trip))
+        assertFalse(agenda.has(LocalDate.of(2026, 12, 23)))
+        for (day in 24..26) assertEquals("종일", agenda.on(LocalDate.of(2026, 12, day)).single().timeLabel())
+        assertFalse(agenda.has(LocalDate.of(2026, 12, 27)))
+        assertFalse(agenda.has(LocalDate.of(2026, 12, 21)))
+    }
+
+    @Test
+    fun deviceEventAcrossMidnight() {
+        // 12/20 22:00 ~ 12/22 09:00
+        val item = DeviceItem.of(3, "출장", millis(2026, 12, 20, 22, 0), millis(2026, 12, 22, 9, 0), false, 0, seoul)
+        val agenda = Agenda(emptyList(), listOf(item))
+        assertEquals("22:00 ~ 24:00", agenda.on(LocalDate.of(2026, 12, 20)).single().timeLabel())
+        assertEquals("종일", agenda.on(LocalDate.of(2026, 12, 21)).single().timeLabel())
+        assertEquals("00:00 ~ 09:00", agenda.on(LocalDate.of(2026, 12, 22)).single().timeLabel())
+        // 자정에 정확히 끝나면 다음 날에는 나오지 않는다.
+        val party = DeviceItem.of(4, "파티", millis(2026, 12, 20, 20, 0), millis(2026, 12, 21, 0, 0), false, 0, seoul)
+        assertEquals("20:00 ~ 24:00", Agenda(emptyList(), listOf(party)).on(LocalDate.of(2026, 12, 20)).single().timeLabel())
+        assertFalse(Agenda(emptyList(), listOf(party)).has(LocalDate.of(2026, 12, 21)))
     }
 
     @Test

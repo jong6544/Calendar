@@ -14,6 +14,8 @@ data class Event(
     val endMin: Int,
     val color: Int,
     val repeat: Int = REPEAT_NONE,
+    /** 기기 캘린더에서 읽어 온 일정이면 원본 위치. 앱에서 만든 일정은 null. */
+    val device: DeviceRef? = null,
 ) {
     val date: LocalDate get() = LocalDate.ofEpochDay(epochDay)
 
@@ -50,13 +52,11 @@ data class Event(
         )
 
         fun formatTime(min: Int): String = "%02d:%02d".format(min / 60, min % 60)
-
-        /** [d]에 해당하는 일정을 종일 → 시작 시간 순으로 정렬해 돌려준다. */
-        fun on(all: List<Event>, d: LocalDate): List<Event> =
-            all.filter { it.occursOn(d) }
-                .sortedWith(compareBy<Event>({ !it.allDay }, { it.startMin }, { it.title }))
     }
 }
+
+/** 기기 캘린더 일정 한 회차: 일정 id와 그 회차의 시작/종료 시각(밀리초). */
+data class DeviceRef(val eventId: Long, val begin: Long, val end: Long)
 
 object Dates {
     val WEEKDAYS = arrayOf("일", "월", "화", "수", "목", "금", "토")

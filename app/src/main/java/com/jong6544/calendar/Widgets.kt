@@ -54,6 +54,8 @@ object Widgets {
     const val ACTION_REFRESH = "com.jong6544.calendar.widget.REFRESH"
     const val EXTRA_DAY = "day"
     const val EXTRA_DELTA = "delta"
+    /** "다가오는 일정" 위젯이 내다보는 일수. */
+    const val UPCOMING_DAYS = 90L
 
     private val providers = listOf(
         MonthAgendaWidget::class.java,
@@ -71,17 +73,25 @@ object Widgets {
             any = true
             for (id in ids) update(context, manager, provider, id)
         }
-        if (any) scheduleMidnightRefresh(context)
+        if (any) {
+            scheduleMidnightRefresh(context)
+            if (DeviceCalendar.isEnabled(context)) DeviceCalendar.watchChanges(context)
+        }
     }
 
     fun update(context: Context, manager: AppWidgetManager, provider: Class<*>, id: Int) {
         val today = LocalDate.now()
-        val events = EventStore.get(context).all()
         val options = manager.getAppWidgetOptions(id)
         val views = when (provider) {
-            MonthAgendaWidget::class.java -> WidgetRenderer.monthAgenda(context, id, options, events, today)
-            AgendaWidget::class.java -> WidgetRenderer.agenda(context, options, events, today)
-            else -> WidgetRenderer.today(context, events, today)
+            MonthAgendaWidget::class.java -> {
+                val month = WidgetState.load(context, id, today).month
+                val agenda = Agenda.load(context, month.atDay(1), month.atEndOfMonth())
+                WidgetRenderer.monthAgenda(context, id, options, agenda, today)
+            }
+            AgendaWidget::class.java -> WidgetRenderer.agenda(
+                context, options, Agenda.load(context, today, today.plusDays(UPCOMING_DAYS)), today,
+            )
+            else -> WidgetRenderer.today(context, Agenda.load(context, today, today), today)
         }
         manager.updateAppWidget(id, views)
     }
@@ -156,7 +166,7 @@ object WidgetRenderer {
 
     /** 왼쪽에 월 달력, 오른쪽에 선택한 날의 일정을 보여주는 위젯. */
     fun monthAgenda(
-        context: Context, widgetId: Int, options: Bundle?, events: List<Event>, today: LocalDate,
+        context: Context, widgetId: Int, options: Bundle?, agenda: Agenda, today: LocalDate,
     ): RemoteViews {
         val theme = WidgetTheme.current(context)
         val state = WidgetState.load(context, widgetId, today)
@@ -219,7 +229,7 @@ object WidgetRenderer {
                         cell.setViewVisibility(R.id.day_bg, View.VISIBLE)
                     }
                     // 오늘은 원으로 채워지므로 밑줄을 겹쳐 그리지 않는다.
-                    if (!isToday && events.any { it.occursOn(date) }) {
+                    if (!isToday && agenda.has(date)) {
                         cell.setInt(R.id.day_mark, "setColorFilter", theme.accent)
                         cell.setViewVisibility(R.id.day_mark, View.VISIBLE)
                     }
@@ -245,7 +255,7 @@ object WidgetRenderer {
         rv.setOnClickPendingIntent(R.id.side, openApp(context, selected))
 
         rv.removeAllViews(R.id.events)
-        val dayEvents = Event.on(events, selected)
+        val dayEvents = agenda.on(selected)
         val capacity = ((heightDp(options, 180) - 60) / 38).coerceIn(1, 7)
         if (dayEvents.isEmpty()) {
             rv.addView(R.id.events, note(context, theme, context.getString(R.string.no_events)))
@@ -262,7 +272,7 @@ object WidgetRenderer {
     }
 
     /** 오늘 날짜와 다가오는 일정을 보여주는 위젯. */
-    fun agenda(context: Context, options: Bundle?, events: List<Event>, today: LocalDate): RemoteViews {
+    fun agenda(context: Context, options: Bundle?, agenda: Agenda, today: LocalDate): RemoteViews {
         val theme = WidgetTheme.current(context)
         val rv = RemoteViews(context.packageName, R.layout.widget_agenda)
         rv.setInt(R.id.root, "setBackgroundResource", theme.backgroundRes)
@@ -276,7 +286,7 @@ object WidgetRenderer {
 
         rv.removeAllViews(R.id.events)
         val capacity = ((heightDp(options, 110) - 28) / 38).coerceIn(1, 8)
-        val upcoming = upcoming(events, today, capacity)
+        val upcoming = upcoming(agenda, today, capacity)
         if (upcoming.isEmpty()) {
             rv.addView(R.id.events, note(context, theme, context.getString(R.string.no_upcoming)))
         }
@@ -292,7 +302,7 @@ object WidgetRenderer {
     }
 
     /** 오늘 날짜를 크게 보여주는 작은 위젯. */
-    fun today(context: Context, events: List<Event>, today: LocalDate): RemoteViews {
+    fun today(context: Context, agenda: Agenda, today: LocalDate): RemoteViews {
         val theme = WidgetTheme.current(context)
         val rv = RemoteViews(context.packageName, R.layout.widget_today)
         rv.setInt(R.id.root, "setBackgroundResource", theme.backgroundRes)
@@ -300,7 +310,7 @@ object WidgetRenderer {
         rv.setTextColor(R.id.today_top, theme.accent)
         rv.setTextViewText(R.id.today_day, today.dayOfMonth.toString())
         rv.setTextColor(R.id.today_day, theme.text)
-        val todays = Event.on(events, today)
+        val todays = agenda.on(today)
         rv.setTextViewText(
             R.id.today_summary,
             when (todays.size) {
@@ -314,13 +324,12 @@ object WidgetRenderer {
         return rv
     }
 
-    /** 오늘부터 90일 안의 일정을 날짜순으로 [limit]개까지. */
-    fun upcoming(events: List<Event>, today: LocalDate, limit: Int): List<Pair<LocalDate, Event>> {
+    /** 오늘부터 [Widgets.UPCOMING_DAYS]일 안의 일정을 날짜순으로 [limit]개까지. */
+    fun upcoming(agenda: Agenda, today: LocalDate, limit: Int): List<Pair<LocalDate, Event>> {
         val out = ArrayList<Pair<LocalDate, Event>>()
-        if (events.isEmpty()) return out
         var d = today
-        repeat(90) {
-            for (e in Event.on(events, d)) {
+        repeat(Widgets.UPCOMING_DAYS.toInt() + 1) {
+            for (e in agenda.on(d)) {
                 out += d to e
                 if (out.size >= limit) return out
             }

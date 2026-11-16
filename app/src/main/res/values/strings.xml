@@ -29,4 +29,12 @@
     <string name="prev_month">이전 달</string>
     <string name="next_month">다음 달</string>
     <string name="add_event">일정 추가</string>
+    <string name="more">더보기</string>
+    <string name="sync_turn_on">기기 캘린더 연동 켜기</string>
+    <string name="sync_turn_off">기기 캘린더 연동 끄기</string>
+    <string name="sync_on">삼성 캘린더 등 기기 캘린더 일정을 함께 표시합니다</string>
+    <string name="sync_off">기기 캘린더 연동을 껐습니다</string>
+    <string name="sync_denied">캘린더 권한이 없어 연동할 수 없습니다. 설정 &gt; 애플리케이션 &gt; 내 캘린더 &gt; 권한에서 캘린더를 허용해 주세요.</string>
+    <string name="device_calendar">기기 캘린더</string>
+    <string name="open_failed">이 일정을 열 수 있는 캘린더 앱이 없습니다</string>
 </resources>

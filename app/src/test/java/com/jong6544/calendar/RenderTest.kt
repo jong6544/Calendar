@@ -74,7 +74,7 @@ class RenderTest {
 
     @Test
     fun monthAgendaWidget() {
-        val events = EventStore.get(context).all()
+        val events = Agenda(EventStore.get(context).all())
         for (theme in WidgetTheme.entries) {
             WidgetTheme.set(context, theme)
             val view = render(
@@ -121,17 +121,58 @@ class RenderTest {
         repeat(5) { store.save(Event(0, "추가 일정 $it", LocalDate.of(2026, 8, 1).toEpochDay(), false, 600 + it * 60, 660 + it * 60, Event.COLORS[it])) }
         val aug1 = LocalDate.of(2026, 8, 1)
         WidgetState.save(context, 2, aug1, WidgetState(YearMonth.of(2026, 8), aug1))
-        render(WidgetRenderer.monthAgenda(context, 2, options(180), store.all(), aug1), 300, 180, "widget_month_agenda_overflow")
+        render(WidgetRenderer.monthAgenda(context, 2, options(180), Agenda(store.all()), aug1), 300, 180, "widget_month_agenda_overflow")
     }
 
     @Test
     fun agendaAndTodayWidgets() {
-        val events = EventStore.get(context).all()
+        val events = Agenda(EventStore.get(context).all())
         WidgetTheme.set(context, WidgetTheme.SKY)
         render(WidgetRenderer.agenda(context, options(150), events, today), 340, 150, "widget_agenda")
         WidgetTheme.set(context, WidgetTheme.CREAM)
         render(WidgetRenderer.today(context, events, today), 150, 150, "widget_today")
-        render(WidgetRenderer.agenda(context, null, emptyList(), today), 340, 110, "widget_agenda_empty")
+        render(WidgetRenderer.agenda(context, null, Agenda(emptyList()), today), 340, 110, "widget_agenda_empty")
+    }
+
+    @Test
+    fun deviceCalendarEventsAppearWhenSyncIsOn() {
+        val zone = java.time.ZoneId.systemDefault()
+        val begin = today.atTime(9, 0).atZone(zone).toInstant().toEpochMilli()
+        val end = today.atTime(10, 30).atZone(zone).toInstant().toEpochMilli()
+        val provider = object : android.content.ContentProvider() {
+            override fun onCreate() = true
+            override fun query(uri: android.net.Uri, projection: Array<out String>?, selection: String?, args: Array<out String>?, sort: String?): android.database.Cursor {
+                assertEquals("instances", uri.pathSegments[0])
+                return android.database.MatrixCursor(projection).apply {
+                    addRow(arrayOf<Any>(42L, "삼성 캘린더 일정", begin, end, 0, 0x4CAF7D))
+                }
+            }
+            override fun getType(uri: android.net.Uri): String? = null
+            override fun insert(uri: android.net.Uri, values: android.content.ContentValues?): android.net.Uri? = null
+            override fun delete(uri: android.net.Uri, selection: String?, args: Array<out String>?) = 0
+            override fun update(uri: android.net.Uri, values: android.content.ContentValues?, selection: String?, args: Array<out String>?) = 0
+        }
+        org.robolectric.shadows.ShadowContentResolver.registerProviderInternal(android.provider.CalendarContract.AUTHORITY, provider)
+
+        // 연동을 켜기 전에는 앱 일정만
+        assertEquals(3, Agenda.load(context, today, today).on(today).size)
+
+        org.robolectric.Shadows.shadowOf(context as android.app.Application)
+            .grantPermissions(android.Manifest.permission.READ_CALENDAR)
+        DeviceCalendar.setEnabled(context, true)
+        try {
+            val agenda = Agenda.load(context, today, today)
+            val titles = agenda.on(today).map { it.title }
+            assertEquals(listOf("엄마 생일", "삼성 캘린더 일정", "마케팅 기획 회의", "가족 식사"), titles)
+            WidgetTheme.set(context, WidgetTheme.CREAM)
+            render(WidgetRenderer.monthAgenda(context, 3, options(220), agenda, today), 340, 220, "widget_month_agenda_synced")
+
+            val main = Robolectric.buildActivity(MainActivity::class.java, MainActivity.intent(context, today)).setup().get()
+            assertEquals(4, main.findViewById<android.widget.ListView>(R.id.event_list).adapter.count)
+            shoot(main, "app_main_synced")
+        } finally {
+            DeviceCalendar.setEnabled(context, false)
+        }
     }
 
     private fun shoot(activity: Activity, name: String) =
