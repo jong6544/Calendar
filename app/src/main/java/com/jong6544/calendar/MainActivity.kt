@@ -84,6 +84,12 @@ class MainActivity : Activity() {
     }
 
     private fun applyIntent(intent: Intent?) {
+        // 파일 앱 등에서 .ics 파일을 이 앱으로 연 경우
+        if (intent?.action == Intent.ACTION_VIEW && intent.data != null) {
+            val uri = intent.data!!
+            intent.data = null
+            importIcs(uri)
+        }
         val day = intent?.getLongExtra(EXTRA_DATE, Long.MIN_VALUE) ?: Long.MIN_VALUE
         if (day != Long.MIN_VALUE) {
             selected = LocalDate.ofEpochDay(day)
@@ -132,17 +138,94 @@ class MainActivity : Activity() {
             menu.add(0, MENU_SYNC, 0, if (syncOn) R.string.sync_turn_off else R.string.sync_turn_on)
             if (syncOn) menu.add(0, MENU_CALENDARS, 1, R.string.choose_calendars)
             if (syncOn) menu.add(0, MENU_HIDE, 1, R.string.choose_hidden)
-            menu.add(0, MENU_THEME, 2, R.string.widget_theme)
+            menu.add(0, MENU_IMPORT, 2, R.string.import_ics)
+            if (EventStore.get(this@MainActivity).importedCount() > 0) {
+                menu.add(0, MENU_DELETE_IMPORTED, 2, R.string.delete_imported)
+            }
+            menu.add(0, MENU_THEME, 3, R.string.widget_theme)
             setOnMenuItemClickListener {
                 when (it.itemId) {
                     MENU_SYNC -> toggleSync(!syncOn)
                     MENU_CALENDARS -> chooseCalendars()
                     MENU_HIDE -> chooseHiddenTitles()
+                    MENU_IMPORT -> pickIcsFile()
+                    MENU_DELETE_IMPORTED -> confirmDeleteImported()
                     MENU_THEME -> chooseTheme()
                 }
                 true
             }
         }.show()
+    }
+
+    private fun pickIcsFile() {
+        val pick = Intent(Intent.ACTION_OPEN_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType("*/*") // 기기마다 .ics의 파일 형식 이름이 달라 전부 보여준다.
+        try {
+            startActivityForResult(pick, REQUEST_ICS)
+        } catch (e: Exception) {
+            Toast.makeText(this, R.string.import_failed, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_ICS && resultCode == RESULT_OK) data?.data?.let { importIcs(it) }
+    }
+
+    /** 파일을 읽어 몇 개를 가져올지 보여주고, 확인하면 앱 일정으로 저장한다. */
+    private fun importIcs(uri: android.net.Uri) {
+        val result = try {
+            val bytes = contentResolver.openInputStream(uri)?.use { input ->
+                val buffer = java.io.ByteArrayOutputStream()
+                val chunk = ByteArray(64 * 1024)
+                while (buffer.size() <= MAX_ICS_BYTES) {
+                    val n = input.read(chunk)
+                    if (n < 0) break
+                    buffer.write(chunk, 0, n)
+                }
+                buffer.toByteArray()
+            }
+            if (bytes == null || bytes.size > MAX_ICS_BYTES) null
+            else Ics.parse(String(bytes, Charsets.UTF_8), java.time.ZoneId.systemDefault(), Event.COLORS[0])
+        } catch (e: Exception) {
+            null
+        }
+        if (result == null || result.events.isEmpty()) {
+            Toast.makeText(this, R.string.import_failed, Toast.LENGTH_LONG).show()
+            return
+        }
+        val message = StringBuilder(getString(R.string.import_confirm, result.events.size))
+        if (result.simplified > 0) {
+            message.append("\n\n").append(getString(R.string.import_simplified, result.simplified))
+        }
+        AlertDialog.Builder(this)
+            .setTitle(result.name ?: getString(R.string.import_ics))
+            .setMessage(message)
+            .setPositiveButton(R.string.do_import) { _, _ ->
+                val (added, updated) = EventStore.get(this).importAll(result.events)
+                Toast.makeText(this, getString(R.string.import_done, added, updated), Toast.LENGTH_LONG).show()
+                select(result.events.minOf { it.epochDay }.let { first ->
+                    val today = LocalDate.now()
+                    if (result.events.any { it.epochDay == today.toEpochDay() }) today else LocalDate.ofEpochDay(first)
+                })
+                Widgets.updateAll(this)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun confirmDeleteImported() {
+        val count = EventStore.get(this).importedCount()
+        AlertDialog.Builder(this)
+            .setMessage(getString(R.string.delete_imported_confirm, count))
+            .setPositiveButton(R.string.delete) { _, _ ->
+                EventStore.get(this).deleteImported()
+                refresh()
+                Widgets.updateAll(this)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun toggleSync(enable: Boolean) {
@@ -328,6 +411,10 @@ class MainActivity : Activity() {
         private const val MENU_THEME = 2
         private const val MENU_CALENDARS = 3
         private const val MENU_HIDE = 4
+        private const val MENU_IMPORT = 5
+        private const val MENU_DELETE_IMPORTED = 6
+        private const val REQUEST_ICS = 2
+        private const val MAX_ICS_BYTES = 5 * 1024 * 1024
 
         fun intent(context: Context, date: LocalDate): Intent =
             Intent(context, MainActivity::class.java).putExtra(EXTRA_DATE, date.toEpochDay())

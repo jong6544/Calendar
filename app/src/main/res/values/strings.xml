@@ -35,6 +35,14 @@
     <string name="all_done">모두 완수</string>
     <string name="open_in_calendar">캘린더 앱에서 열기</string>
     <string name="hide_this_title">이 제목의 일정 숨기기</string>
+    <string name="import_ics">일정 파일(.ics) 가져오기</string>
+    <string name="import_confirm">일정 %1$d개를 이 앱에 저장합니다.\n\n이미 가져온 일정은 중복되지 않고 갱신됩니다.</string>
+    <string name="import_simplified">반복 규칙이 복잡한 일정 %1$d개는 첫 회만 가져옵니다.</string>
+    <string name="do_import">가져오기</string>
+    <string name="import_done">새로 추가 %1$d개, 갱신 %2$d개</string>
+    <string name="import_failed">파일에서 일정을 읽지 못했습니다. .ics 파일인지 확인해 주세요.</string>
+    <string name="delete_imported">가져온 일정 모두 삭제</string>
+    <string name="delete_imported_confirm">파일에서 가져온 일정 %1$d개와 그 완수 기록을 모두 삭제할까요?</string>
     <string name="more">더보기</string>
     <string name="sync_turn_on">기기 캘린더 연동 켜기</string>
     <string name="sync_turn_off">기기 캘린더 연동 끄기</string>

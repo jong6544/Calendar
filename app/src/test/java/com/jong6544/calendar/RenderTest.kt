@@ -259,6 +259,36 @@ class RenderTest {
         store.doneKeys().forEach { store.setDone(it, false) }
     }
 
+    @Test
+    fun importedEventsAreUpdatedNotDuplicated() {
+        val store = EventStore.get(context)
+        val before = store.all().size
+        fun file(title: String) = Ics.parse(
+            "BEGIN:VEVENT\nUID:u1\nDTSTART;VALUE=DATE:20261220\nSUMMARY:$title\nEND:VEVENT\n" +
+                "BEGIN:VEVENT\nUID:u2\nDTSTART;VALUE=DATE:20261221\nSUMMARY:둘째\nEND:VEVENT",
+            java.time.ZoneId.systemDefault(), Event.COLORS[0],
+        ).events
+        assertEquals(2 to 0, store.importAll(file("첫째")))
+        assertEquals(0 to 2, store.importAll(file("첫째 (수정)")))
+        assertEquals(before + 2, store.all().size)
+        assertEquals(2, store.importedCount())
+        val first = store.all().single { it.uid == "u1" }
+        assertEquals("첫째 (수정)", first.title)
+
+        // 앱에서 수정해도 uid가 남아, 다시 가져올 때 중복되지 않는다.
+        store.save(first.copy(title = "직접 수정", uid = null))
+        assertEquals("u1", store.get(first.id)?.uid)
+
+        // 가져온 일정만 지워지고, 완수 기록도 함께 지워진다.
+        store.setDone(first.doneKey(), true)
+        val own = store.all().first { it.uid == null }
+        store.setDone(own.doneKey(), true)
+        assertEquals(2, store.deleteImported())
+        assertEquals(before, store.all().size)
+        assertEquals(setOf(own.doneKey()), store.doneKeys())
+        store.setDone(own.doneKey(), false)
+    }
+
     private fun shoot(activity: Activity, name: String) =
         snapshot(activity.window.decorView, dp(411), dp(891), name)
 

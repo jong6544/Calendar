@@ -128,6 +128,48 @@ class EventTest {
     }
 
     @Test
+    fun icsImport() {
+        val text = listOf(
+            "BEGIN:VCALENDAR", "X-WR-CALNAME:로스쿨 공부",
+            "BEGIN:VEVENT", "UID:a@x", "DTSTART;VALUE=DATE:20261116", "DTEND;VALUE=DATE:20261117",
+            "SUMMARY:LEET 2027 언어이해 진단 (70분\\, 시간", "  재고)", "END:VEVENT",
+            "BEGIN:VEVENT", "UID:b@x", "DTSTART;TZID=Asia/Seoul:20261120T143000", "DTEND;TZID=Asia/Seoul:20261120T150000",
+            "SUMMARY:회의", "RRULE:FREQ=WEEKLY", "BEGIN:VALARM", "SUMMARY:알림", "END:VALARM", "END:VEVENT",
+            "BEGIN:VEVENT", "UID:c@x", "DTSTART:20261201T010000Z", "SUMMARY:UTC 일정", "END:VEVENT",
+            "BEGIN:VEVENT", "UID:d@x", "DTSTART;VALUE=DATE:20261224", "DTEND;VALUE=DATE:20261227", "SUMMARY:여행", "END:VEVENT",
+            "BEGIN:VEVENT", "UID:e@x", "DTSTART;VALUE=DATE:20261205", "SUMMARY:격주", "RRULE:FREQ=WEEKLY;INTERVAL=2", "END:VEVENT",
+            "BEGIN:VEVENT", "UID:f@x", "STATUS:CANCELLED", "DTSTART;VALUE=DATE:20261206", "SUMMARY:취소됨", "END:VEVENT",
+            "END:VCALENDAR",
+        ).joinToString("\r\n")
+        val r = Ics.parse(text, seoul, 7)
+        assertEquals("로스쿨 공부", r.name)
+        assertEquals(1, r.simplified)
+        val byUid = r.events.associateBy { it.uid }
+        assertEquals(setOf("a@x", "b@x", "c@x", "d@x", "d@x#1", "d@x#2", "e@x"), byUid.keys)
+
+        val a = byUid.getValue("a@x")
+        assertEquals("LEET 2027 언어이해 진단 (70분, 시간 재고)", a.title)
+        assertTrue(a.allDay)
+        assertEquals(LocalDate.of(2026, 11, 16), a.date)
+        assertEquals(7, a.color)
+
+        val b = byUid.getValue("b@x")
+        assertEquals("14:30 ~ 15:00", b.timeLabel())
+        assertEquals(Event.REPEAT_WEEKLY, b.repeat)
+        assertEquals("회의", b.title)
+
+        val c = byUid.getValue("c@x") // UTC 01:00 = 서울 10:00, 종료가 없으면 1시간
+        assertEquals("10:00 ~ 11:00", c.timeLabel())
+
+        assertEquals(
+            listOf(24, 25, 26),
+            listOf("d@x", "d@x#1", "d@x#2").map { byUid.getValue(it).date.dayOfMonth },
+        )
+        assertEquals(Event.REPEAT_NONE, byUid.getValue("e@x").repeat)
+        assertTrue(Ics.parse("not a calendar", seoul, 0).events.isEmpty())
+    }
+
+    @Test
     fun timeLabels() {
         assertEquals("14:30 ~ 15:00", Event(0, "x", 0, false, 870, 900, 0).timeLabel())
         assertEquals("종일", Event(0, "x", 0, true, 0, 0, 0).timeLabel())

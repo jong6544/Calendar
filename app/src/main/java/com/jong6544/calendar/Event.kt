@@ -20,6 +20,8 @@ data class Event(
     val shownDay: Long = epochDay,
     /** [shownDay]의 이 일정을 완수했는지. */
     val done: Boolean = false,
+    /** 파일(.ics)에서 가져온 일정의 고유 id. 같은 파일을 다시 가져오면 중복 대신 갱신한다. */
+    val uid: String? = null,
 ) {
     val date: LocalDate get() = LocalDate.ofEpochDay(epochDay)
 
